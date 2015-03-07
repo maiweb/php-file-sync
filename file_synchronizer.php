@@ -81,6 +81,22 @@ class File_Synchronizer
 	 */
 
 	private $path_b = null;
+	
+	/** Paths to ignore in sync
+	 *
+	 *  @var array
+	 *
+	 */
+
+	private $ignore_paths = array();
+	
+	/** Files to ignore in sync
+	 *
+	 *  @var array
+	 *
+	 */
+
+	private $ignore_files = array();
 
 	/** An UNIX timestamp that tells the class when the two paths were last
 	 *  synchronized. This timestamp is used to locate files that were changed
@@ -262,6 +278,50 @@ class File_Synchronizer
 	{
 		return $this->path_b;
 	}
+	
+	/** Sets a array with the paths that should be ignored.
+	 *
+	 *  @param array $ignore_paths with the paths that should be ignored.
+	 *
+	 */
+
+	public function set_ignore_paths($ignore_paths)
+	{
+		$this->ignore_paths = $ignore_paths;
+	}
+
+	/** Returns a array with the paths that should be ignored.
+	 *
+	 *  @return array with the paths that should be ignored
+	 *
+	 */	
+
+	public function get_ignore_paths()
+	{
+		return $this->ignore_paths;
+	}
+	
+	/** Sets a array with the files that should be ignored.
+	 *
+	 *  @param array $ignore_files with the files that should be ignored
+	 *
+	 */
+
+	public function set_ignore_files($ignore_files)
+	{
+		$this->ignore_files = $ignore_files;
+	}
+
+	/** Returns a array with the files that should be ignored.
+	 *
+	 *  @return array with the files that should be ignored
+	 *
+	 */	
+
+	public function get_ignore_files()
+	{
+		return $this->ignore_files;
+	}
 
 	/** Sets the UNIX timestamp of the time and date when the two paths were
 	 *  last synchronized. This timestamp is used to determine if files are to
@@ -423,174 +483,181 @@ class File_Synchronizer
 			$new_path_b = $path_b . "/" . $file;
 			$is_directory = is_dir($new_path_a);
 			
-			// We check if the same file exists in the other path
-
-			if(file_exists($new_path_b))
+			// Check if directory is not ignored
+			if(($is_directory === true && !in_array($path_a, $this->ignore_paths)) || $is_directory === false) 
 			{
-				// The file exists in the other path and therfore it's type
-				// should match the type of the file in this path, in other
-				// words, if the file in this path is a directory the file in
-				// the other path should be a dirctory too.
-
-				if($is_directory != is_dir($new_path_b))
+				// Check if file is not ignored
+				if(($is_directory === false && !in_array($new_path_a, $this->ignore_files)) || $is_directory === true) 
 				{
-					// The type of the two files doesn't match. We abort the
-					// synchornization and throw an exception.
-
-					throw new Resource_Missmatch_Exception("Resource type mismatch: '" . $new_path_a . "' doesn't match '" . $new_path_b . "'");
-				}
-				
-				if($is_directory)
-				{
-					if($this->logger != null)
-						$this->logger->log_message("Syncrhonizng '" . $new_path_a . "' -> '" . $new_path_b . "'");
-
-					// We recursively synchornize the directory with it's
-					// counterpart in the other path. Note that if an error
-					// occurr while doing that synchronization an exception will
-					// be thrown.
-
-					$this->sync_paths($new_path_a, $new_path_b);
-				}
-				else
-				{
-					// We get the modification time of both files.
-
-					$last_modify_time_a = 0;
-					$last_modify_time_b = 0;
-
-					$stat = stat($new_path_a);
-
-					if($stat != false)
+					// We check if the same file exists in the other path
+					if(file_exists($new_path_b))
 					{
-						$mtime = $stat["mtime"];
-						$ctime = $stat["ctime"];
-						$last_modify_time_a = max($mtime, $ctime);
-					}
-
-					$stat = stat($new_path_b);
-
-					if($stat != false)
-					{
-						$mtime = $stat["mtime"];
-						$ctime = $stat["ctime"];
-						$last_modify_time_b = max($mtime, $ctime);
-					}
-
-					// For the file to be copied to the other path it must meet
-					// three requirements.
-					//
-					// 1. It was modified after the last syncrhonzation
-					// 2. It was modified after the file in the other path
-					// 3. It wasn't modified after the syncrhonization started.
-
-					$copy_file = true;
-					$copy_file = $copy_file && ($last_modify_time_a > $this->last_sync_time);
-					$copy_file = $copy_file && ($last_modify_time_a > $last_modify_time_b);
-					$copy_file = $copy_file && ($last_modify_time_a < $this->sync_start_time);
-
-					// 4. If USE_CHECKSUM is true, the checksums of the two
-					//    versions of the file must differ.
-
-					if($copy_file == true && $this->use_checksum == true)
-					{
-						// Calculate the checksums of both files and see if they
-						// are different. If they do not differ then the file is
-						// not copied.
-
-						$checksum_a = sha1_file($new_path_a);
-						$checksum_b = sha1_file($new_path_b);
-						$copy_file = ($checksum_a != $checksum_b);
-					}
-
-					if($copy_file == true)
-					{
-						if($this->logger != null)
-							$this->logger->log_message("Copying '" . $new_path_a . "' -> '" . $new_path_b . "'");
-
-						$result = true;
-						if(!$this->simulate)
-							$result = @copy($new_path_a, $new_path_b);
+						// The file exists in the other path and therfore it's type
+						// should match the type of the file in this path, in other
+						// words, if the file in this path is a directory the file in
+						// the other path should be a dirctory too.
+		
+						if($is_directory != is_dir($new_path_b))
+						{
+							// The type of the two files doesn't match. We abort the
+							// synchornization and throw an exception.
+		
+							throw new Resource_Missmatch_Exception("Resource type mismatch: '" . $new_path_a . "' doesn't match '" . $new_path_b . "'");
+						}
 						
-						// If we were unable to copy the file or directory to
-						// the other path. We abort the synchronization process
-						// and throw an exception.
-
-						if(!$result)
-							throw new File_Copy_Exception("Unable to copy the file '" . $new_path_a . "' to '" . $new_path_b . "'");
-					}
-				}
-			}
-			else
-			{
-				// We get the last modification time of the file.
-
-				$last_modify_time = 0;
-				$stat = stat($new_path_a);
-				
-				if($stat != false)
-				{
-					$mtime = $stat["mtime"];
-					$ctime = $stat["ctime"];
-					$last_modify_time = max($mtime, $ctime);
-				}
-
-				// We check if file was last modified before the last
-				// synchronization
-
-				if($last_modify_time <= $this->last_sync_time)
-				{
-					// Since the file was last modified before the last
-					// synchronization we can asume that the file was deleted on
-					// the other path after the synchronization so it should be
-					// removed from this path as well.
-					
-					if($is_directory)
-					{
-						// The file is a directory, we have to recursively
-						// delete it and all its files and sub-folders.
-
-						$this->remove_directory($new_path_a);
+						if($is_directory)
+						{
+							if($this->logger != null)
+								$this->logger->log_message("Syncrhonizng '" . $new_path_a . "' -> '" . $new_path_b . "'");
+		
+							// We recursively synchornize the directory with it's
+							// counterpart in the other path. Note that if an error
+							// occurr while doing that synchronization an exception will
+							// be thrown.
+		
+							$this->sync_paths($new_path_a, $new_path_b);
+						}
+						else
+						{
+							// We get the modification time of both files.
+		
+							$last_modify_time_a = 0;
+							$last_modify_time_b = 0;
+		
+							$stat = stat($new_path_a);
+		
+							if($stat != false)
+							{
+								$mtime = $stat["mtime"];
+								$ctime = $stat["ctime"];
+								$last_modify_time_a = max($mtime, $ctime);
+							}
+		
+							$stat = stat($new_path_b);
+		
+							if($stat != false)
+							{
+								$mtime = $stat["mtime"];
+								$ctime = $stat["ctime"];
+								$last_modify_time_b = max($mtime, $ctime);
+							}
+		
+							// For the file to be copied to the other path it must meet
+							// three requirements.
+							//
+							// 1. It was modified after the last syncrhonzation
+							// 2. It was modified after the file in the other path
+							// 3. It wasn't modified after the syncrhonization started.
+		
+							$copy_file = true;
+							$copy_file = $copy_file && ($last_modify_time_a > $this->last_sync_time);
+							$copy_file = $copy_file && ($last_modify_time_a > $last_modify_time_b);
+							$copy_file = $copy_file && ($last_modify_time_a < $this->sync_start_time);
+		
+							// 4. If USE_CHECKSUM is true, the checksums of the two
+							//    versions of the file must differ.
+		
+							if($copy_file == true && $this->use_checksum == true)
+							{
+								// Calculate the checksums of both files and see if they
+								// are different. If they do not differ then the file is
+								// not copied.
+		
+								$checksum_a = sha1_file($new_path_a);
+								$checksum_b = sha1_file($new_path_b);
+								$copy_file = ($checksum_a != $checksum_b);
+							}
+		
+							if($copy_file == true)
+							{
+								if($this->logger != null)
+									$this->logger->log_message("Copying '" . $new_path_a . "' -> '" . $new_path_b . "'");
+		
+								$result = true;
+								if(!$this->simulate)
+									$result = @copy($new_path_a, $new_path_b);
+								
+								// If we were unable to copy the file or directory to
+								// the other path. We abort the synchronization process
+								// and throw an exception.
+		
+								if(!$result)
+									throw new File_Copy_Exception("Unable to copy the file '" . $new_path_a . "' to '" . $new_path_b . "'");
+							}
+						}
 					}
 					else
 					{
-						if($this->logger != null)
-							$this->logger->log_message("Removing '" . $new_path_a . "'");
-
-						$result = true;
-						if(!$this->simulate)
-							$result = @unlink($new_path_a);
-
-						// If we fail to delete the file we throw an exception.
-
-						if($result == false)
-							throw new File_Delete_Exception("Couldn't delete file '" . $new_path_a . "'");
-					}
-				}
-				else
-				{
-					// Since the file was last modified after the last
-					// synchronization we asume that the file is new on this
-					// path and thus we should copy it to the other path.
-
-					if($this->logger != null)
-						$this->logger->log_message("Copying '" . $new_path_a . "' -> '" . $new_path_b . "'");
-
-					if($is_directory)
-					{
-						$this->copy_directory($new_path_a, $new_path_b);
-					}
-					else
-					{
-						$result = true;
-						if(!$this->simulate)
-							$result = @copy($new_path_a, $new_path_b);
-
-						// If we were unable to copy the file to the other path
-						// we throw an exception.
-
-						if($result == false)
-							throw new File_Copy_Exception("Unable to copy the file '" . $new_path_a . "' to '" . $new_path_b . "'");
+						// We get the last modification time of the file.
+		
+						$last_modify_time = 0;
+						$stat = stat($new_path_a);
+						
+						if($stat != false)
+						{
+							$mtime = $stat["mtime"];
+							$ctime = $stat["ctime"];
+							$last_modify_time = max($mtime, $ctime);
+						}
+		
+						// We check if file was last modified before the last
+						// synchronization
+		
+						if($last_modify_time <= $this->last_sync_time)
+						{
+							// Since the file was last modified before the last
+							// synchronization we can asume that the file was deleted on
+							// the other path after the synchronization so it should be
+							// removed from this path as well.
+							
+							if($is_directory)
+							{
+								// The file is a directory, we have to recursively
+								// delete it and all its files and sub-folders.
+		
+								$this->remove_directory($new_path_a);
+							}
+							else
+							{
+								if($this->logger != null)
+									$this->logger->log_message("Removing '" . $new_path_a . "'");
+		
+								$result = true;
+								if(!$this->simulate)
+									$result = @unlink($new_path_a);
+		
+								// If we fail to delete the file we throw an exception.
+		
+								if($result == false)
+									throw new File_Delete_Exception("Couldn't delete file '" . $new_path_a . "'");
+							}
+						}
+						else
+						{
+							// Since the file was last modified after the last
+							// synchronization we asume that the file is new on this
+							// path and thus we should copy it to the other path.
+		
+							if($this->logger != null)
+								$this->logger->log_message("Copying '" . $new_path_a . "' -> '" . $new_path_b . "'");
+		
+							if($is_directory)
+							{
+								$this->copy_directory($new_path_a, $new_path_b);
+							}
+							else
+							{
+								$result = true;
+								if(!$this->simulate)
+									$result = @copy($new_path_a, $new_path_b);
+		
+								// If we were unable to copy the file to the other path
+								// we throw an exception.
+		
+								if($result == false)
+									throw new File_Copy_Exception("Unable to copy the file '" . $new_path_a . "' to '" . $new_path_b . "'");
+							}
+						}
 					}
 				}
 			}
